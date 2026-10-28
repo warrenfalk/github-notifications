@@ -1,0 +1,25 @@
+[package]
+name = "gh-comments"
+version = "0.1.0"
+edition = "2024"
+description = "A local GitHub comment inbox and desktop notifier"
+publish = false
+
+[features]
+default = []
+gui = ["dep:iced"]
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+fs2 = "0.4"
+iced = { version = "0.14", optional = true, default-features = false, features = ["tiny-skia", "tokio", "wayland", "x11"] }
+notify-rust = "4"
+pulldown-cmark = "0.13"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "signal"] }
+webbrowser = "1"
