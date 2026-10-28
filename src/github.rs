@@ -84,23 +84,9 @@ pub struct GitHub {
 
 impl GitHub {
     pub async fn connect() -> Result<Self> {
-        let token = match std::env::var("GH_COMMENTS_TOKEN").or_else(|_| std::env::var("GH_TOKEN"))
-        {
-            Ok(token) => token,
-            Err(_) => {
-                let output = tokio::process::Command::new("gh")
-                    .args(["auth", "token", "--hostname", "github.com"])
-                    .output()
-                    .await
-                    .context("Set GH_TOKEN or sign in with `gh auth login`")?;
-                ensure!(
-                    output.status.success(),
-                    "GitHub authentication unavailable; run `gh auth login`"
-                );
-                String::from_utf8(output.stdout)?.trim().to_owned()
-            }
-        };
-        ensure!(!token.trim().is_empty(), "GitHub token is empty");
+        let token = tokio::task::spawn_blocking(crate::config::load_token)
+            .await
+            .context("Token setup worker failed")??;
         let mut authorization = header::HeaderValue::from_str(&format!("Bearer {token}"))?;
         authorization.set_sensitive(true);
         let mut headers = header::HeaderMap::new();

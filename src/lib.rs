@@ -1,3 +1,4 @@
+pub mod config;
 pub mod filter;
 pub mod github;
 pub mod store;

@@ -21,13 +21,34 @@ Without direnv, prefix commands with `nix develop -c`.
 
 ## Usage
 
-Authenticate with GitHub CLI (`gh auth login`), or supply a classic personal access
-token in `GH_COMMENTS_TOKEN` (preferred for app-specific credentials) or `GH_TOKEN`.
-An ignored `.env.local` can hold `GH_COMMENTS_TOKEN` for direnv to load. Fine-grained
-PATs cannot access GitHub's notifications endpoint. The API requires the `notifications` or `repo`
-scope, and fetching private repository comments also requires repository access.
-Organization SSO or app restrictions may require additional authorization. Tokens
-are read at startup and are not stored in the inbox database.
+Collector authentication uses the first available source:
+
+1. A nonempty `GH_COMMENTS_TOKEN` environment variable.
+2. The `token` field in `$XDG_CONFIG_HOME/gh-comments/gh-comments.toml`, normally
+   `~/.config/gh-comments/gh-comments.toml`.
+3. An interactive terminal prompt. Input is hidden, and the token is saved to the
+   config file for subsequent runs, including a future user service.
+
+```toml
+token = "ghp_your_classic_personal_access_token"
+```
+
+Run `cargo run -- sync` in a terminal for first-time setup. The app creates its
+config directory with mode `0700` and writes the config atomically with mode
+`0600` on Unix. Tokens supplied through the environment are not saved. Existing
+unrelated TOML settings are preserved. Edit the config's `token` field to replace
+a saved token.
+
+Non-interactive runs never prompt: they require the environment variable or a
+saved token and otherwise exit with setup instructions. Local commands (`inbox`,
+`list`, `status`, and `open`) do not need a token. `GH_TOKEN` and GitHub CLI login
+are not used for authentication. An ignored `.env.local` can still hold
+`GH_COMMENTS_TOKEN` for direnv to load.
+
+Use a classic personal access token: fine-grained PATs cannot access GitHub's
+notifications endpoint. The API requires the `notifications` or `repo` scope, and
+fetching private repository comments requires `repo`. Organization SSO restrictions
+may require additional authorization. Tokens are not stored in the inbox database.
 
 ```sh
 # Fetch recent activity once. Initial import adds history without desktop alerts.
