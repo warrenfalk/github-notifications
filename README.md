@@ -19,6 +19,61 @@ cargo build --features gui
 
 Without direnv, prefix commands with `nix develop -c`.
 
+## Nix package and autostart
+
+The default package includes the collector, Iced inbox, runtime windowing
+libraries, browser-opening support, and a **GitHub Notifications** desktop launcher.
+The build source contains only Cargo manifests and Rust sources; local credential
+files, databases, and build artifacts are excluded.
+
+```sh
+nix build .
+nix run . -- inbox
+nix run . -- sync
+```
+
+For NixOS, add this repository as a flake input:
+
+```nix
+inputs.github-notifications = {
+  url = "github:warrenfalk/github-notifications";
+  inputs.nixpkgs.follows = "nixpkgs";
+};
+```
+
+Import `inputs.github-notifications.nixosModules.default` in the host's modules
+and enable it for your desktop user:
+
+```nix
+services.github-notifications = {
+  enable = true;
+  user = "warren";
+};
+```
+
+The module installs the package and starts `github-notifications.service` as a
+user service with `graphical-session.target`. It stops with the graphical session,
+restarts on failure, and opens no inbox window automatically. Launch the inbox
+from the application menu or with `github-notifications inbox`.
+
+Credentials remain in the user's runtime config file, outside the Nix store.
+Create that saved token interactively before enabling autostart. If your shell
+already exports an override, unset it for this command so the prompt saves a file:
+
+```sh
+env -u GITHUB_NOTIFICATIONS_TOKEN github-notifications sync
+```
+
+Stop any terminal-run collector before starting the service; both use the same
+database lock. After activating the NixOS configuration, log into a graphical
+session or start the service from your existing session:
+
+```sh
+systemctl --user start github-notifications
+systemctl --user status github-notifications
+journalctl --user -u github-notifications -n 50
+```
+
 ## Usage
 
 Collector authentication uses the first available source:
@@ -75,8 +130,8 @@ must remain running to handle clicks. The first inbox UI provides excerpts, loca
 read state, automatic refresh within about one second, a manual refresh button,
 and links to GitHub. Automatic refresh reads only the local database and does not
 make extra GitHub requests. The inbox does not start the collector itself; close
-the window without stopping a separate `watch` process.
-No autostart service is installed.
+the window without stopping a separate `watch` process or enabled user service.
+Autostart is opt-in through the NixOS module above.
 
 Use **Dismiss** to remove a comment from the local list, or **Dismiss all shown**
 to clear the currently displayed comments. Dismissal preserves each comment's ID
