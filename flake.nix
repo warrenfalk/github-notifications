@@ -1,5 +1,5 @@
 {
-  description = "A local GitHub comment inbox and desktop notifier";
+  description = "A local GitHub notification inbox and desktop notifier";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

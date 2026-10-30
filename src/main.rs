@@ -1,14 +1,17 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use clap::{Parser, Subcommand};
-use gh_comments::{database_path, filter, github::GitHub, open_github, store::Store};
+use github_notifications::{database_path, filter, github::GitHub, open_github, store::Store};
 use std::{fs::OpenOptions, path::PathBuf, time::Duration as StdDuration};
 
 #[cfg(feature = "gui")]
 mod ui;
 
 #[derive(Parser)]
-#[command(version, about = "A local GitHub comment inbox and desktop notifier")]
+#[command(
+    version,
+    about = "A local GitHub notification inbox and desktop notifier"
+)]
 struct Cli {
     /// Override the local SQLite inbox path.
     #[arg(long, global = true)]
@@ -264,7 +267,7 @@ fn deliver(store: &Store) -> Result<()> {
             .replace('<', "&lt;")
             .replace('>', "&gt;");
         match notify_rust::Notification::new()
-            .appname("gh-comments")
+            .appname("github-notifications")
             .summary(&format!("@{} · {}", item.author, item.repository))
             .body(&body)
             .action("default", "Open on GitHub")

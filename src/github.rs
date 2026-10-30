@@ -188,7 +188,7 @@ impl GitHub {
         );
         Ok(Self {
             client: Client::builder()
-                .user_agent("gh-comments/0.1.0")
+                .user_agent("github-notifications/0.1.0")
                 .default_headers(headers)
                 .redirect(reqwest::redirect::Policy::none())
                 .timeout(StdDuration::from_secs(30))
@@ -244,7 +244,7 @@ impl GitHub {
                 && url.starts_with("https://api.github.com/notifications?")
             {
                 bail!(
-                    "GitHub notifications returned HTTP 403. This endpoint does not support fine-grained PATs. Set GH_COMMENTS_TOKEN to a classic PAT with notifications scope and repository access as needed; also check organization SSO restrictions"
+                    "GitHub notifications returned HTTP 403. This endpoint does not support fine-grained PATs. Set GITHUB_NOTIFICATIONS_TOKEN to a classic PAT with notifications scope and repository access as needed; also check organization SSO restrictions"
                 );
             }
             // Do not print response bodies, headers, or credentials.

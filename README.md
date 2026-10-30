@@ -1,6 +1,6 @@
-# gh-comments
+# github-notifications
 
-A local GitHub comment inbox and Linux desktop notifier. The first implementation
+A local GitHub notification inbox and Linux desktop notifier. The first implementation
 filters comments on changed pull requests and issues rather than forwarding every
 GitHub notification.
 
@@ -23,9 +23,9 @@ Without direnv, prefix commands with `nix develop -c`.
 
 Collector authentication uses the first available source:
 
-1. A nonempty `GH_COMMENTS_TOKEN` environment variable.
-2. The `token` field in `$XDG_CONFIG_HOME/gh-comments/gh-comments.toml`, normally
-   `~/.config/gh-comments/gh-comments.toml`.
+1. A nonempty `GITHUB_NOTIFICATIONS_TOKEN` environment variable.
+2. The `token` field in `$XDG_CONFIG_HOME/github-notifications/github-notifications.toml`, normally
+   `~/.config/github-notifications/github-notifications.toml`.
 3. An interactive terminal prompt. Input is hidden, and the token is saved to the
    config file for subsequent runs, including a future user service.
 
@@ -43,7 +43,7 @@ Non-interactive runs never prompt: they require the environment variable or a
 saved token and otherwise exit with setup instructions. Local commands (`inbox`,
 `list`, `status`, and `open`) do not need a token. `GH_TOKEN` and GitHub CLI login
 are not used for authentication. An ignored `.env.local` can still hold
-`GH_COMMENTS_TOKEN` for direnv to load.
+`GITHUB_NOTIFICATIONS_TOKEN` for direnv to load.
 
 Use a classic personal access token: fine-grained PATs cannot access GitHub's
 notifications endpoint. The API requires the `notifications` or `repo` scope, and
@@ -90,8 +90,8 @@ It keeps the current list visible while loading, ignores unchanged results, and
 does not toggle the Refresh button's appearance. A read started before a local
 dismissal cannot restore the dismissed rows when it finishes.
 
-The default database is `$XDG_DATA_HOME/gh-comments/inbox.sqlite3`, usually
-`~/.local/share/gh-comments/inbox.sqlite3`. Override it with `--database PATH`.
+The default database is `$XDG_DATA_HOME/github-notifications/inbox.sqlite3`, usually
+`~/.local/share/github-notifications/inbox.sqlite3`. Override it with `--database PATH`.
 Private comment text is stored locally; the database file is restricted to its
 owner on Unix. Local read state is independent of GitHub read state. Opening a
 comment in the browser can affect GitHub's read state normally.

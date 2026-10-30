@@ -1156,7 +1156,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gh-comments"
+name = "github-notifications"
 version = "0.1.0"
 dependencies = [
  "anyhow",

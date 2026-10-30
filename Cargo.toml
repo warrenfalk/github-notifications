@@ -1,8 +1,8 @@
 [package]
-name = "gh-comments"
+name = "github-notifications"
 version = "0.1.0"
 edition = "2024"
-description = "A local GitHub comment inbox and desktop notifier"
+description = "A local GitHub notification inbox and desktop notifier"
 publish = false
 
 [features]

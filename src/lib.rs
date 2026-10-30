@@ -8,8 +8,8 @@ use directories::ProjectDirs;
 use std::path::PathBuf;
 
 pub fn database_path() -> Result<PathBuf> {
-    let dirs =
-        ProjectDirs::from("", "", "gh-comments").context("Cannot determine data directory")?;
+    let dirs = ProjectDirs::from("", "", "github-notifications")
+        .context("Cannot determine data directory")?;
     std::fs::create_dir_all(dirs.data_local_dir())?;
     Ok(dirs.data_local_dir().join("inbox.sqlite3"))
 }

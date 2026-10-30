@@ -7,17 +7,17 @@ use std::{
 use toml_edit::DocumentMut;
 
 pub fn config_path() -> Result<PathBuf> {
-    let dirs = ProjectDirs::from("", "", "gh-comments")
+    let dirs = ProjectDirs::from("", "", "github-notifications")
         .context("Cannot determine configuration directory")?;
-    Ok(dirs.config_dir().join("gh-comments.toml"))
+    Ok(dirs.config_dir().join("github-notifications.toml"))
 }
 
 pub fn load_token() -> Result<String> {
-    let environment = match std::env::var("GH_COMMENTS_TOKEN") {
+    let environment = match std::env::var("GITHUB_NOTIFICATIONS_TOKEN") {
         Ok(value) => Some(value),
         Err(std::env::VarError::NotPresent) => None,
         // Do not include the non-Unicode environment value in the error.
-        Err(_) => bail!("GH_COMMENTS_TOKEN must be valid text"),
+        Err(_) => bail!("GITHUB_NOTIFICATIONS_TOKEN must be valid text"),
     };
     let path = config_path()?;
     resolve_token(
@@ -86,7 +86,7 @@ fn resolve_token(
     }
     ensure!(
         interactive,
-        "No GitHub token configured. Set GH_COMMENTS_TOKEN or run `gh-comments sync` in a terminal to save a token in {}",
+        "No GitHub token configured. Set GITHUB_NOTIFICATIONS_TOKEN or run `github-notifications sync` in a terminal to save a token in {}",
         path.display()
     );
     let token = validate_token(&prompt()?)?;
@@ -134,7 +134,9 @@ mod tests {
     #[test]
     fn prompted_token_is_saved_and_reused_without_prompting() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let path = directory.path().join("gh-comments/gh-comments.toml");
+        let path = directory
+            .path()
+            .join("github-notifications/github-notifications.toml");
         assert_eq!(
             resolve_token(&path, None, true, || Ok("  ghp_example  ".into()))?,
             "ghp_example"
@@ -164,12 +166,12 @@ mod tests {
     #[test]
     fn noninteractive_missing_token_fails_without_prompting_or_creating_file() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let path = directory.path().join("gh-comments.toml");
+        let path = directory.path().join("github-notifications.toml");
         let error = resolve_token(&path, None, false, || panic!("must not prompt")).unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("run `gh-comments sync` in a terminal")
+                .contains("run `github-notifications sync` in a terminal")
         );
         assert!(!path.exists());
         Ok(())
@@ -178,7 +180,7 @@ mod tests {
     #[test]
     fn saving_preserves_unrelated_configuration_and_comments() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let path = directory.path().join("gh-comments.toml");
+        let path = directory.path().join("github-notifications.toml");
         std::fs::write(&path, "# Local settings\npoll_interval = 90\ntoken = ''\n")?;
         resolve_token(&path, None, true, || Ok("ghp_example".into()))?;
         let document = std::fs::read_to_string(&path)?;
@@ -190,7 +192,7 @@ mod tests {
     #[test]
     fn empty_prompt_does_not_write_configuration() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let path = directory.path().join("gh-comments.toml");
+        let path = directory.path().join("github-notifications.toml");
         assert!(resolve_token(&path, None, true, || Ok("  ".into())).is_err());
         assert!(!path.exists());
         Ok(())
@@ -199,7 +201,7 @@ mod tests {
     #[test]
     fn malformed_config_error_does_not_disclose_contents() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let path = directory.path().join("gh-comments.toml");
+        let path = directory.path().join("github-notifications.toml");
         std::fs::write(&path, "token = 'ghp_sensitive\n")?;
         let error = resolve_token(&path, None, true, || {
             panic!("must not overwrite malformed config")
@@ -212,7 +214,7 @@ mod tests {
     #[test]
     fn environment_overrides_config_without_saving_or_parsing_it() -> Result<()> {
         let directory = tempfile::tempdir()?;
-        let path = directory.path().join("gh-comments.toml");
+        let path = directory.path().join("github-notifications.toml");
         let contents = "token = 'malformed configuration\n";
         std::fs::write(&path, contents)?;
         assert_eq!(

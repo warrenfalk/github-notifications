@@ -1,4 +1,4 @@
-use gh_comments::{
+use github_notifications::{
     open_github,
     store::{Item, Store},
 };
@@ -24,7 +24,7 @@ pub fn run(path: PathBuf) -> anyhow::Result<()> {
         Inbox::update,
         Inbox::view,
     )
-    .title("GitHub comments")
+    .title("GitHub notifications")
     .subscription(Inbox::subscription)
     .window_size((900.0, 700.0))
     .run()?;
@@ -92,7 +92,7 @@ fn load(path: PathBuf, revision: u64) -> Task<Message> {
                     "Last sync: {} | Error: {} | Coverage: {}",
                     store
                         .meta("last_success")?
-                        .unwrap_or_else(|| "never; start `gh-comments watch`".into()),
+                        .unwrap_or_else(|| "never; start `github-notifications watch`".into()),
                     store.meta("last_error")?.unwrap_or_else(|| "none".into()),
                     store
                         .meta("coverage_warning")?
@@ -217,12 +217,12 @@ impl Inbox {
             );
         }
         if self.items.is_empty() {
-            list = list.push(text("No relevant comments collected yet."));
+            list = list.push(text("No relevant notifications collected yet."));
         }
         container(
             column![
                 row![
-                    text("GitHub comments").size(28),
+                    text("GitHub notifications").size(28),
                     button("Refresh local inbox").on_press(Message::Refresh),
                     button("Dismiss all shown").on_press_maybe((!self.items.is_empty()).then(
                         || Message::Dismiss(
