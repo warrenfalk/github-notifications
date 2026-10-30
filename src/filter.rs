@@ -1,4 +1,4 @@
-use crate::github::Comment;
+use crate::github::{Comment, Conversation, ReviewState};
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 
 /// Inspect rendered text, excluding fenced/indented code and inline code.
@@ -50,6 +50,43 @@ pub fn reason(
         .then_some("Replied in your review conversation")
 }
 
+pub fn relevant(conversation: Conversation, username: &str) -> Vec<(Comment, &'static str)> {
+    let own_pull_request = conversation
+        .pull_request_author
+        .as_ref()
+        .is_some_and(|author| author.login.eq_ignore_ascii_case(username));
+    let mut result = Vec::new();
+    for comment in conversation.comments {
+        if let Some(reason) = reason(&comment, &conversation.review_comments, username) {
+            result.push((comment, reason));
+        }
+    }
+    for (comment, state) in conversation.reviews {
+        let reason = if own_pull_request && !comment.user.login.eq_ignore_ascii_case(username) {
+            match state {
+                ReviewState::Approved => Some("Approved your pull request"),
+                ReviewState::ChangesRequested => Some("Requested changes on your pull request"),
+                ReviewState::Commented => Some("Left a review on your pull request"),
+                _ => None,
+            }
+        } else {
+            None
+        }
+        .or_else(|| reason(&comment, &conversation.review_comments, username));
+        if let Some(reason) = reason {
+            result.push((comment, reason));
+        }
+    }
+    for request in conversation.review_requests {
+        if request.reviewer.login.eq_ignore_ascii_case(username)
+            && !request.comment.user.login.eq_ignore_ascii_case(username)
+        {
+            result.push((request.comment, "Requested your review"));
+        }
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +122,81 @@ mod tests {
         assert!(reason(&comment(3, "someone", 11), &comments, "warren").is_none());
         assert!(reason(&comment(1, "someone", 10), &comments, "warren").is_none());
         assert!(reason(&comment(4, "warren", 10), &comments, "warren").is_none());
+    }
+
+    #[test]
+    fn all_submitted_review_types_qualify_on_own_pr_without_text() {
+        for (state, expected) in [
+            (ReviewState::Approved, "Approved your pull request"),
+            (
+                ReviewState::ChangesRequested,
+                "Requested changes on your pull request",
+            ),
+            (ReviewState::Commented, "Left a review on your pull request"),
+        ] {
+            let mut review = comment(3, "reviewer", 10);
+            review.body.clear();
+            review.thread_id = None;
+            let conversation = Conversation {
+                pull_request_author: Some(User {
+                    login: "WARREN".into(),
+                }),
+                reviews: vec![(review, state)],
+                ..Conversation::default()
+            };
+            let accepted = relevant(conversation, "warren");
+            assert_eq!(accepted.len(), 1);
+            assert_eq!(accepted[0].1, expected);
+        }
+    }
+
+    #[test]
+    fn foreign_prs_self_reviews_and_dismissed_reviews_do_not_qualify() {
+        for (author, reviewer, state) in [
+            ("other", "reviewer", ReviewState::Approved),
+            ("warren", "warren", ReviewState::Commented),
+            ("warren", "reviewer", ReviewState::Dismissed),
+        ] {
+            let conversation = Conversation {
+                pull_request_author: Some(User {
+                    login: author.into(),
+                }),
+                reviews: vec![(comment(3, reviewer, 10), state)],
+                ..Conversation::default()
+            };
+            assert!(relevant(conversation, "warren").is_empty());
+        }
+    }
+
+    #[test]
+    fn mentions_in_reviews_on_other_prs_still_qualify() {
+        let mut review = comment(3, "reviewer", 10);
+        review.body = "Please check this, @warren".into();
+        review.thread_id = None;
+        let conversation = Conversation {
+            reviews: vec![(review, ReviewState::Commented)],
+            ..Conversation::default()
+        };
+        assert_eq!(relevant(conversation, "warren")[0].1, "Mentioned you");
+    }
+
+    #[test]
+    fn requests_are_filtered_by_actual_reviewer_not_notification_reason() {
+        let requests = ["WARREN", "other"]
+            .into_iter()
+            .map(|reviewer| crate::github::ReviewRequest {
+                comment: comment(3, "author", 10),
+                reviewer: User {
+                    login: reviewer.into(),
+                },
+            })
+            .collect();
+        let conversation = Conversation {
+            review_requests: requests,
+            ..Conversation::default()
+        };
+        let accepted = relevant(conversation, "warren");
+        assert_eq!(accepted.len(), 1);
+        assert_eq!(accepted[0].1, "Requested your review");
     }
 }

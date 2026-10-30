@@ -101,6 +101,11 @@ comment in the browser can affect GitHub's read state normally.
 - New comments from other people that mention your username.
 - New review comments in the same review conversation where you previously
   commented, even if the reply does not mention you.
+- Submitted reviews on PRs you authored: approvals, change requests, and
+  comment-only reviews, including reviews with an empty summary body.
+- Direct requests naming your account as a reviewer. These use dated timeline
+  events, so removing and re-requesting your review creates a new notification;
+  unrelated later PR activity does not repeat the original request.
 - Your own comments are excluded. A different conversation on the same PR does
   not qualify merely because you participated elsewhere on that PR.
 
@@ -128,14 +133,22 @@ quiet, avoiding historical alert bursts when an old PR becomes active again.
 Desktop delivery is tracked separately so failed sends can be retried. A crash
 between sending an alert and recording delivery can still produce a duplicate.
 
+On upgrade to review/request support, newly discovered review history at or before
+the collector's previous checkpoint is imported quietly. Existing review-summary
+IDs, read state, and dismissals are preserved. Review requests link to the PR;
+submitted reviews link to the review itself. An alert records the request event,
+even if that request has since been removed or fulfilled.
+
 ## Coverage and next work
 
 Implemented: PR descriptions, issue descriptions, top-level issue/PR comments,
 review summaries, and inline review comments. Descriptions and review summaries
-currently qualify through mentions only. Edits are not treated as new events.
+on other people's PRs qualify through mentions only; submitted reviews on your
+own PRs also qualify by their review state. Edits and review dismissals are not
+treated as new review submissions. Draft/pending reviews are excluded.
 
-Not implemented: Discussions, commit comments, team mentions, conversation
-grouping/muting, or webhook ingestion. Unsupported feed
+Not implemented: Discussions, commit comments, team mentions or team review
+requests, conversation grouping/muting, or webhook ingestion. Unsupported feed
 types are recorded in collector status. Coverage depends on GitHub emitting a
 notification and the account's subscription settings; this is not an independent
 repository activity audit. The initial lookback is 30 days of notification

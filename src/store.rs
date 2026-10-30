@@ -206,6 +206,53 @@ mod tests {
     }
 
     #[test]
+    fn review_requests_deduplicate_but_a_rerequest_is_a_new_delivery() -> Result<()> {
+        let store = Store::open(Path::new(":memory:"))?;
+        let mut request = Comment {
+            id: "review-request:101".into(),
+            user: User {
+                login: "author".into(),
+            },
+            body: "Requested your review".into(),
+            html_url: "https://github.com/a/b/pull/1".into(),
+            created_at: Utc::now(),
+            thread_id: None,
+        };
+        store.insert(&request, "PR", "a/b", "Requested your review", false)?;
+        store.delivered(&request.id)?;
+        store.dismiss(std::slice::from_ref(&request.id))?;
+        store.insert(&request, "PR", "a/b", "Requested your review", false)?;
+        assert!(store.list(true)?.is_empty());
+        request.id = "review-request:103".into();
+        store.insert(&request, "PR", "a/b", "Requested your review", false)?;
+        let pending = store.list(true)?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, "review-request:103");
+        Ok(())
+    }
+
+    #[test]
+    fn existing_review_summary_dismissal_survives_expanded_review_rules() -> Result<()> {
+        let store = Store::open(Path::new(":memory:"))?;
+        let review = Comment {
+            id: "review-body:42".into(),
+            user: User {
+                login: "reviewer".into(),
+            },
+            body: "Thanks @warren".into(),
+            html_url: "https://github.com/a/b/pull/1#pullrequestreview-42".into(),
+            created_at: Utc::now(),
+            thread_id: None,
+        };
+        store.insert(&review, "PR", "a/b", "Mentioned you", false)?;
+        store.dismiss(std::slice::from_ref(&review.id))?;
+        store.insert(&review, "PR", "a/b", "Approved your pull request", false)?;
+        assert!(store.list(false)?.is_empty());
+        assert!(store.list(true)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
     fn failed_transaction_does_not_advance_checkpoint_or_save_items() -> Result<()> {
         let store = Store::open(Path::new(":memory:"))?;
         {

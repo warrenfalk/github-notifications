@@ -69,6 +69,93 @@ struct Review {
     body: Option<String>,
     html_url: String,
     submitted_at: Option<DateTime<Utc>>,
+    state: ReviewState,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ReviewState {
+    Approved,
+    ChangesRequested,
+    Commented,
+    Dismissed,
+    Pending,
+    #[serde(other)]
+    Other,
+}
+
+impl Review {
+    fn into_comment(self) -> Option<(Comment, ReviewState)> {
+        if self.state == ReviewState::Pending {
+            return None;
+        }
+        Some((
+            Comment {
+                // Preserve the existing ID so mentions previously accepted from a
+                // review summary do not become duplicate alerts after this change.
+                id: format!("review-body:{}", self.id),
+                user: self.user.unwrap_or_default(),
+                body: self.body.unwrap_or_default(),
+                html_url: self.html_url,
+                created_at: self.submitted_at?,
+                thread_id: None,
+            },
+            self.state,
+        ))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "event")]
+enum TimelineEvent {
+    #[serde(rename = "review_requested")]
+    ReviewRequested {
+        id: u64,
+        actor: Option<User>,
+        created_at: DateTime<Utc>,
+        requested_reviewer: Option<User>,
+    },
+    #[serde(other)]
+    Other,
+}
+
+pub struct ReviewRequest {
+    pub comment: Comment,
+    pub reviewer: User,
+}
+
+impl TimelineEvent {
+    fn into_request(self, pull_request_url: &str) -> Option<ReviewRequest> {
+        let Self::ReviewRequested {
+            id,
+            actor,
+            created_at,
+            requested_reviewer,
+        } = self
+        else {
+            return None;
+        };
+        Some(ReviewRequest {
+            reviewer: requested_reviewer?,
+            comment: Comment {
+                id: format!("review-request:{id}"),
+                user: actor.unwrap_or_default(),
+                body: "Requested your review of this pull request.".into(),
+                html_url: pull_request_url.to_owned(),
+                created_at,
+                thread_id: None,
+            },
+        })
+    }
+}
+
+#[derive(Default)]
+pub struct Conversation {
+    pub comments: Vec<Comment>,
+    pub review_comments: Vec<Comment>,
+    pub reviews: Vec<(Comment, ReviewState)>,
+    pub review_requests: Vec<ReviewRequest>,
+    pub pull_request_author: Option<User>,
 }
 
 pub struct Batch {
@@ -230,7 +317,7 @@ impl GitHub {
         }
     }
 
-    pub async fn comments(&mut self, subject: &Subject) -> Result<(Vec<Comment>, Vec<Comment>)> {
+    pub async fn comments(&mut self, subject: &Subject) -> Result<Conversation> {
         let url = subject
             .url
             .as_deref()
@@ -246,39 +333,48 @@ impl GitHub {
             .await?
             .json::<RawComment>()
             .await?;
-        let mut comments = vec![description.into_comment("description", false)];
-        comments.extend(
+        let mut conversation = Conversation {
+            pull_request_author: if is_pr {
+                description.user.clone()
+            } else {
+                None
+            },
+            ..Conversation::default()
+        };
+        let pull_request_url = description.html_url.clone();
+        conversation
+            .comments
+            .push(description.into_comment("description", false));
+        conversation.comments.extend(
             self.list::<RawComment>(&format!("{issue_url}/comments"))
                 .await?
                 .into_iter()
                 .map(|c| c.into_comment("issue", false)),
         );
-        let mut review_comments = Vec::new();
         if is_pr {
-            review_comments = self
+            conversation.review_comments = self
                 .list::<RawComment>(&format!("{url}/comments"))
                 .await?
                 .into_iter()
                 .map(|c| c.into_comment("review", true))
                 .collect();
-            comments.extend(review_comments.iter().cloned());
-            comments.extend(
-                self.list::<Review>(&format!("{url}/reviews"))
-                    .await?
-                    .into_iter()
-                    .filter_map(|r| {
-                        Some(Comment {
-                            id: format!("review-body:{}", r.id),
-                            user: r.user.unwrap_or_default(),
-                            body: r.body.unwrap_or_default(),
-                            html_url: r.html_url,
-                            created_at: r.submitted_at?,
-                            thread_id: None,
-                        })
-                    }),
-            );
+            conversation
+                .comments
+                .extend(conversation.review_comments.iter().cloned());
+            conversation.reviews = self
+                .list::<Review>(&format!("{url}/reviews"))
+                .await?
+                .into_iter()
+                .filter_map(Review::into_comment)
+                .collect();
+            conversation.review_requests = self
+                .list::<TimelineEvent>(&format!("{issue_url}/timeline"))
+                .await?
+                .into_iter()
+                .filter_map(|event| event.into_request(&pull_request_url))
+                .collect();
         }
-        Ok((comments, review_comments))
+        Ok(conversation)
     }
 }
 
@@ -288,4 +384,63 @@ fn has_next(response: &Response) -> bool {
         .get(header::LINK)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|links| links.split(',').any(|link| link.contains("rel=\"next\"")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn empty_submitted_reviews_preserve_state_and_identity() -> Result<()> {
+        for state in ["APPROVED", "CHANGES_REQUESTED", "COMMENTED"] {
+            let review: Review = serde_json::from_value(json!({
+                "id": 42, "user": {"login": "reviewer"}, "body": null,
+                "html_url": "https://github.com/a/b/pull/1#pullrequestreview-42",
+                "submitted_at": "2026-10-30T12:00:00Z", "state": state
+            }))?;
+            let (comment, parsed_state) = review.into_comment().unwrap();
+            assert_eq!(comment.id, "review-body:42");
+            assert!(comment.body.is_empty());
+            assert!(matches!(
+                parsed_state,
+                ReviewState::Approved | ReviewState::ChangesRequested | ReviewState::Commented
+            ));
+        }
+        let pending: Review = serde_json::from_value(json!({
+            "id": 43, "user": {"login": "reviewer"}, "body": "Draft",
+            "html_url": "https://github.com/a/b/pull/1", "submitted_at": null, "state": "PENDING"
+        }))?;
+        assert!(pending.into_comment().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn timeline_requests_have_event_identity_and_ignore_unrelated_shapes() -> Result<()> {
+        let events: Vec<TimelineEvent> = serde_json::from_value(json!([
+            {"event": "committed", "sha": "abc"},
+            {"id": 101, "event": "review_requested", "actor": {"login": "author"},
+             "requested_reviewer": {"login": "warren"}, "created_at": "2026-10-30T12:00:00Z"},
+            {"id": 102, "event": "review_request_removed"},
+            {"id": 103, "event": "review_requested", "actor": {"login": "author"},
+             "requested_reviewer": {"login": "warren"}, "created_at": "2026-10-30T12:01:00Z"},
+            {"id": 104, "event": "review_requested", "actor": null,
+             "requested_reviewer": null, "requested_team": {"slug": "team"},
+             "created_at": "2026-10-30T12:02:00Z"}
+        ]))?;
+        let requests: Vec<_> = events
+            .into_iter()
+            .filter_map(|e| e.into_request("https://github.com/a/b/pull/1"))
+            .collect();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].comment.id, "review-request:101");
+        assert_eq!(requests[1].comment.id, "review-request:103");
+        assert_eq!(requests[0].comment.user.login, "author");
+        assert_eq!(requests[0].reviewer.login, "warren");
+        assert_eq!(
+            requests[0].comment.html_url,
+            "https://github.com/a/b/pull/1"
+        );
+        Ok(())
+    }
 }

@@ -163,6 +163,14 @@ async fn sync(github: &mut GitHub, store: &Store, username: &str, days: u32) -> 
     let since = store
         .checkpoint()?
         .unwrap_or(now - Duration::days(i64::from(days)));
+    // Newly supported review events discovered during upgrade may include old
+    // history. Import it quietly, while alerting events newer than our last
+    // checkpoint. Keep this baseline stable across subsequent polls/restarts.
+    let review_activity_since: chrono::DateTime<Utc> = store
+        .meta("review_activity_since")?
+        .map(|value| value.parse())
+        .transpose()?
+        .unwrap_or(since);
     let batch = github.notifications(since).await?;
     let transaction = store.0.unchecked_transaction()?;
     let mut checkpoint = since;
@@ -175,7 +183,7 @@ async fn sync(github: &mut GitHub, store: &Store, username: &str, days: u32) -> 
             continue;
         }
         let subject_key = format!(
-            "subject:{}",
+            "subject:v2:{}",
             notification
                 .subject
                 .url
@@ -186,7 +194,7 @@ async fn sync(github: &mut GitHub, store: &Store, username: &str, days: u32) -> 
         if store.meta(&subject_key)?.as_deref() == Some(&updated_at) {
             continue;
         }
-        let (comments, review_comments) = github
+        let conversation = github
             .comments(&notification.subject)
             .await
             .with_context(|| {
@@ -195,16 +203,18 @@ async fn sync(github: &mut GitHub, store: &Store, username: &str, days: u32) -> 
                     notification.repository.full_name, notification.subject.title
                 )
             })?;
-        for comment in comments {
-            if let Some(reason) = filter::reason(&comment, &review_comments, username) {
-                store.insert(
-                    &comment,
-                    &notification.subject.title,
-                    &notification.repository.full_name,
-                    reason,
-                    initial || comment.created_at <= initialized_at,
-                )?;
-            }
+        for (comment, reason) in filter::relevant(conversation, username) {
+            let review_activity =
+                comment.id.starts_with("review-body:") || comment.id.starts_with("review-request:");
+            store.insert(
+                &comment,
+                &notification.subject.title,
+                &notification.repository.full_name,
+                reason,
+                initial
+                    || comment.created_at <= initialized_at
+                    || (review_activity && comment.created_at <= review_activity_since),
+            )?;
         }
         store.set_meta(&subject_key, &updated_at)?;
     }
@@ -212,6 +222,7 @@ async fn sync(github: &mut GitHub, store: &Store, username: &str, days: u32) -> 
         store.set_meta("initialized_at", &now.to_rfc3339())?;
     }
     store.set_meta("checkpoint", &checkpoint.to_rfc3339())?;
+    store.set_meta("review_activity_since", &review_activity_since.to_rfc3339())?;
     store.set_meta("last_success", &now.to_rfc3339())?;
     store.set_meta("last_error", "none")?;
     let encountered_unsupported = !unsupported.is_empty();
@@ -230,7 +241,7 @@ async fn sync(github: &mut GitHub, store: &Store, username: &str, days: u32) -> 
     transaction.commit()?;
     github.accept(batch.validator);
     println!(
-        "{}: {added} relevant comment(s) added{}",
+        "{}: {added} relevant item(s) added{}",
         now.to_rfc3339(),
         if initial {
             " (quiet initial import)"
